@@ -1,8 +1,11 @@
 document.addEventListener("DOMContentLoaded", () => {
   const activitiesList = document.getElementById("activities-list");
-  const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const modal = document.getElementById("registration-modal");
+  const modalActivityName = document.getElementById("modal-activity-name");
+  const activityInput = document.getElementById("activity");
+  const closeBtn = document.querySelector(".close-btn");
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -45,20 +48,20 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="participants-container">
             ${participantsHTML}
           </div>
+          <button class="register-btn" data-activity="${name}">Register Student</button>
         `;
 
         activitiesList.appendChild(activityCard);
-
-        // Add option to select dropdown
-        const option = document.createElement("option");
-        option.value = name;
-        option.textContent = name;
-        activitySelect.appendChild(option);
       });
 
       // Add event listeners to delete buttons
       document.querySelectorAll(".delete-btn").forEach((button) => {
         button.addEventListener("click", handleUnregister);
+      });
+
+      // Add event listeners to register buttons
+      document.querySelectorAll(".register-btn").forEach((button) => {
+        button.addEventListener("click", openRegistrationModal);
       });
     } catch (error) {
       activitiesList.innerHTML =
@@ -110,12 +113,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Handle opening registration modal
+  function openRegistrationModal(event) {
+    const button = event.target;
+    const activity = button.getAttribute("data-activity");
+    
+    modalActivityName.textContent = activity;
+    activityInput.value = activity;
+    modal.classList.remove("hidden");
+    document.getElementById("email").value = "";
+    messageDiv.classList.add("hidden");
+  }
+
+  // Handle closing registration modal
+  function closeRegistrationModal() {
+    modal.classList.add("hidden");
+    signupForm.reset();
+    messageDiv.classList.add("hidden");
+  }
+
+  // Close modal when clicking the X button
+  closeBtn.addEventListener("click", closeRegistrationModal);
+
+  // Close modal when clicking outside the modal content
+  window.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeRegistrationModal();
+    }
+  });
+
   // Handle form submission
   signupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const email = document.getElementById("email").value;
-    const activity = document.getElementById("activity").value;
+    const activity = activityInput.value;
 
     try {
       const response = await fetch(
@@ -136,6 +168,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Refresh activities list to show updated participants
         fetchActivities();
+
+        // Close modal after 2 seconds
+        setTimeout(() => {
+          closeRegistrationModal();
+        }, 2000);
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
