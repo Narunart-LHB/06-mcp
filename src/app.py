@@ -5,14 +5,26 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Cookie
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
+from typing import Optional
 import os
+import json
+import secrets
 from pathlib import Path
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
+
+# Session storage (in-memory for simplicity)
+active_sessions = {}
+
+# Load teacher credentials
+def load_teachers():
+    teachers_file = Path(__file__).parent / "teachers.json"
+    with open(teachers_file, 'r') as f:
+        return json.load(f)['teachers']
 
 # Mount the static files directory
 current_dir = Path(__file__).parent
@@ -78,6 +90,59 @@ activities = {
 }
 
 
+def get_current_user(session_token: Optional[str] = Cookie(None)):
+    """Check if user is authenticated"""
+    if session_token and session_token in active_sessions:
+        return active_sessions[session_token]
+    return None
+
+
+@app.post("/login")
+def login(username: str, password: str):
+    """Authenticate a teacher"""
+    teachers = load_teachers()
+    
+    for teacher in teachers:
+        if teacher['username'] == username and teacher['password'] == password:
+            # Create session token
+            session_token = secrets.token_urlsafe(32)
+            active_sessions[session_token] = username
+            
+            response = JSONResponse(content={
+                "message": "Login successful",
+                "username": username
+            })
+            response.set_cookie(
+                key="session_token",
+                value=session_token,
+                httponly=True,
+                max_age=3600  # 1 hour
+            )
+            return response
+    
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+@app.post("/logout")
+def logout(session_token: Optional[str] = Cookie(None)):
+    """Logout a teacher"""
+    if session_token and session_token in active_sessions:
+        del active_sessions[session_token]
+    
+    response = JSONResponse(content={"message": "Logged out successfully"})
+    response.delete_cookie(key="session_token")
+    return response
+
+
+@app.get("/auth/status")
+def auth_status(current_user: Optional[str] = Depends(get_current_user)):
+    """Check authentication status"""
+    return {
+        "authenticated": current_user is not None,
+        "username": current_user
+    }
+
+
 @app.get("/")
 def root():
     return RedirectResponse(url="/static/index.html")
@@ -89,8 +154,19 @@ def get_activities():
 
 
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
+def signup_for_activity(
+    activity_name: str, 
+    email: str,
+    current_user: Optional[str] = Depends(get_current_user)
+):
+    """Sign up a student for an activity (teachers only)"""
+    # Check authentication
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Only teachers can register students."
+        )
+    
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -111,8 +187,19 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
-    """Unregister a student from an activity"""
+def unregister_from_activity(
+    activity_name: str, 
+    email: str,
+    current_user: Optional[str] = Depends(get_current_user)
+):
+    """Unregister a student from an activity (teachers only)"""
+    # Check authentication
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Only teachers can unregister students."
+        )
+    
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
